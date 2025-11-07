@@ -52,6 +52,8 @@
             Signal = new Label();
             label4 = new Label();
             Distance = new Label();
+            label5 = new Label();
+            Temp = new Label();
             SuspendLayout();
             // 
             // Operator
@@ -253,9 +255,10 @@
             // Signal
             // 
             Signal.AutoSize = true;
+            Signal.Font = new Font("Segoe UI", 10F);
             Signal.Location = new Point(271, 169);
             Signal.Name = "Signal";
-            Signal.Size = new Size(70, 20);
+            Signal.Size = new Size(82, 23);
             Signal.TabIndex = 27;
             Signal.Text = "Unknown";
             // 
@@ -271,16 +274,40 @@
             // Distance
             // 
             Distance.AutoSize = true;
+            Distance.Font = new Font("Segoe UI", 10F);
             Distance.Location = new Point(290, 201);
             Distance.Name = "Distance";
-            Distance.Size = new Size(70, 20);
+            Distance.Size = new Size(82, 23);
             Distance.TabIndex = 29;
             Distance.Text = "Unknown";
+            // 
+            // label5
+            // 
+            label5.AutoSize = true;
+            label5.Location = new Point(12, 104);
+            label5.Name = "label5";
+            label5.Size = new Size(96, 20);
+            label5.TabIndex = 30;
+            label5.Text = "Temperature:";
+            label5.Visible = false;
+            // 
+            // Temp
+            // 
+            Temp.AutoSize = true;
+            Temp.Font = new Font("Segoe UI", 10F);
+            Temp.Location = new Point(113, 104);
+            Temp.Name = "Temp";
+            Temp.Size = new Size(82, 23);
+            Temp.TabIndex = 31;
+            Temp.Text = "Unknown";
+            Temp.Visible = false;
             // 
             // MainWindow
             // 
             AutoScaleMode = AutoScaleMode.None;
             ClientSize = new Size(914, 559);
+            Controls.Add(Temp);
+            Controls.Add(label5);
             Controls.Add(Distance);
             Controls.Add(label4);
             Controls.Add(Signal);
@@ -338,5 +365,7 @@
         private Label Signal;
         private Label label4;
         private Label Distance;
+        private Label label5;
+        private Label Temp;
     }
 }

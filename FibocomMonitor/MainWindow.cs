@@ -5,8 +5,9 @@ namespace FibocomMonitor
 {
     public partial class MainWindow : Form
     {
-        private ATHost? ATH;
+        private AtHost ATH;
         private bool FindCOM = true;
+        private CancellationTokenSource UICts = new();
 
         public MainWindow()
         {
@@ -17,28 +18,12 @@ namespace FibocomMonitor
 
         private async void MainWindow_FormLoad(object? sender, EventArgs e)
         {
-            string[] Ports = SerialPort.GetPortNames();
-            if (Ports.Length >= 1)
-            {
-                COMList.Items.AddRange(Ports);
-            }
-            else
-            {
-                while (FindCOM)
-                {
-                    Ports = SerialPort.GetPortNames();
-                    if (Ports.Length >= 1)
-                    {
-                        COMList.Items.AddRange(Ports);
-                        break;
-                    }
-                    await Task.Delay(100);
-                }
-            }
+            await RefreshComListAsync();
         }
 
         private void MainWindow_FormClosing(object? sender, FormClosingEventArgs e)
         {
+            UICts.Cancel();
             if (ATH != null)
             {
                 if (ATH.IsOpen != false)
@@ -49,17 +34,17 @@ namespace FibocomMonitor
             }
         }
 
-        private async Task UIUpdate()
+        private async Task UIUpdateAsync()
         {
-            while (ATH.IsOpen)
+            while (ATH.IsOpen && !UICts.IsCancellationRequested)
             {
-                await ATH.SendCommand();
+                ATH.SendCommand();
                 Data data = ATH.Result;
-                data.Clear();
                 CarrierList.Items.Clear();
                 CarrierList.Items.AddRange([.. data.BandList]);
                 Operator.Text = data.Operator;
                 StatusNetwork.Text = data.StatusNetwork;
+                Temp.Text = data.TEMP;
                 RSRP.Text = data.RSRP;
                 if (data.StatusNetwork == "LTE") { FCN.Text = data.EARFCN; LB5.Text = "EARFCN:"; } else { FCN.Text = data.UARFCN; LB5.Text = "UARFCN:"; }
                 Band.Text = data.Band;
@@ -67,24 +52,31 @@ namespace FibocomMonitor
                 RSSI.Text = data.RSSI;
                 Signal.Text = data.SignalStrength;
                 Distance.Text = data.Distance;
-                await Task.Delay(1500);
+                await Task.Delay(1500, UICts.Token);
+                data.Clear();
             }
             ClearDisplay();
         }
 
         private async void ButtonCon_Click(object sender, EventArgs e)
         {
-            if (COMList.SelectedItem is string ATPort)
+            FindCOM = false;
+            string ATPort = COMList.SelectedItem as string;
+            if (ATPort != null || !string.IsNullOrEmpty(ATPort))
             {
                 if (ATH != null && ATH.IsOpen == true)
                 {
                     ATH.SetNewPort(ATPort);
                     return;
                 }
-                ATH = new ATHost(ATPort);
-                await UIUpdate();
+                ATH = new AtHost(ATPort);
+                if(ATH.IsGL860)
+                {
+                    Temp.Visible = true;
+                    label5.Visible = true;
+                }
+                await UIUpdateAsync();
             }
-            FindCOM = false;
         }
 
         private void ClearDisplay()
@@ -114,11 +106,26 @@ namespace FibocomMonitor
                     ClearDisplay();
                     return;
                 }
-                if (ATHost.Check(ATPort, out SerialPort? serial))
+                if (AtHost.Check(ATPort, out SerialPort? serial))
                 {
                     serial?.Close();
                     serial?.Dispose();
                 }
+            }
+        }
+
+        private async Task RefreshComListAsync()
+        {
+            while (FindCOM)
+            {
+                var ports = SerialPort.GetPortNames();
+                if (ports.Length > 0)
+                {
+                    COMList.Items.Clear();
+                    COMList.Items.AddRange(ports);
+                    break;
+                }
+                await Task.Delay(500);
             }
         }
     }
