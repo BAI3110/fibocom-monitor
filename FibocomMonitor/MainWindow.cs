@@ -38,7 +38,7 @@ namespace FibocomMonitor
         {
             while (ATH.IsOpen && !UICts.IsCancellationRequested)
             {
-                ATH.SendCommand();
+                await ATH.SendCommand().WaitAsync(UICts.Token);
                 Data data = ATH.Result;
                 CarrierList.Items.Clear();
                 CarrierList.Items.AddRange([.. data.BandList]);
@@ -81,7 +81,7 @@ namespace FibocomMonitor
 
         private void ClearDisplay()
         {
-            var s = "Unknown";
+            string s = "Unknown";
             CarrierList.Items.Clear();
             Operator.Text = s;
             FCN.Text = s;
@@ -91,6 +91,7 @@ namespace FibocomMonitor
             SINR.Text = s;
             RSSI.Text = s;
             Signal.Text = s;
+            Distance.Text = s;
         }
 
         private void PortClose_Click(object sender, EventArgs e)

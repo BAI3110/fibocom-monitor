@@ -1,4 +1,5 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO.Ports;
 using System.Text.RegularExpressions;
@@ -35,6 +36,7 @@ namespace FibocomMonitor.AT
     public partial class AtHost : IDisposable
     {
         private readonly SerialPort Port;
+        private readonly CancellationTokenSource CTS;
         public bool IsGL860 = false;
 
         public bool IsOpen { get; private set; } = false;
@@ -43,6 +45,7 @@ namespace FibocomMonitor.AT
         public AtHost(string serialport)
         {
             Result = new Data();
+            CTS = new CancellationTokenSource();
             Port = new SerialPort(serialport, 115200, Parity.None, 8, StopBits.One);
             Port.DtrEnable = true;
             Port.Handshake = Handshake.None;
@@ -59,7 +62,7 @@ namespace FibocomMonitor.AT
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
-            CheckSerial();
+            //CheckSerial();
         }
 
         private void Port_PinChanged(object sender, SerialPinChangedEventArgs e)
@@ -67,41 +70,66 @@ namespace FibocomMonitor.AT
             Close(true);
         }
 
-        public void SendCommand()
+        public async Task SendCommand()
         {
             try
             {
-                CheckSIM();
-                if(IsGL860)
+                //CheckSIM();
+
+                if (IsGL860)
                 {
                     string mtsm = SendAndRead("AT+MTSM=1");
-                    Result.TEMP = MTSMRegex().Match(mtsm).Value;
+                    var mMtsm = MTSMRegex().Match(mtsm);
+                    Result.TEMP = mMtsm.Success ? mMtsm.Value : string.Empty;
                 }
+
                 string cops = SendAndRead("AT+COPS?");
                 DecoderCOPS(cops);
+
                 string csq = SendAndRead("AT+CSQ?");
                 DecoderCSQ(csq);
 
-                string response = SendAndRead("AT+XCCINFO?; +XLEC?; +XMCI=1");
+                string xccinfo = SendAndRead("AT+XCCINFO?;");
+                var mXcc = XCCINFORegex().Match(xccinfo);
+                if (!mXcc.Success || !int.TryParse(mXcc.Groups["ta"].Value, out int ta))
+                    throw new InvalidOperationException("Failed to parse TA from XCCINFO response.");
 
-                int ta = int.Parse(XCCINFORegex().Match(response).Groups["ta"].Value);
+                string xlec = SendAndRead("AT+XLEC?;");
+                var mXlec = XLECRegex().Match(xlec);
+                if (!mXlec.Success) throw new InvalidOperationException("Failed to parse XLEC response.");
+                var bwlist = mXlec.Groups["bwlist"].Value
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => { bool ok = int.TryParse(s, out int v); return (ok, v); })
+                    .Where(t => t.ok)
+                    .Select(t => t.v)
+                    .ToArray();
+                if (bwlist.Length == 0) throw new InvalidOperationException("No bandwidth codes found in XLEC.");
 
-                var mXlec = XLECRegex().Match(response);
-
-                int[] bwcodes = mXlec.Groups["bwlist"].Value.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray();
-                var ratMatch = XMCIFindRat().Match(response);
-                if (!ratMatch.Success || 
-                    !int.TryParse(ratMatch.Groups["Type"].Value, out int rat) ||
-                    (rat != 2 && rat != 4))
+                string xmci = SendAndRead("AT+XMCI=1");
+                Match ratMatch = XMCIFindRat().Match(xmci);
+                if (!ratMatch.Success || ratMatch.Length == 0 ||
+                    !int.TryParse(ratMatch.Groups["Type"].Value, out int rat))
                 {
-                    throw new Exception("Unknow network type.");
+                    throw new InvalidOperationException("Failed to parse XMCI response");
                 }
 
-                MatchCollection xmciLines = GetXMCILines(response, rat);
-                DecoderXS(bwcodes[0], ta, rat, xmciLines[0]);
-                XMCIDecoder(xmciLines, rat, bwcodes);
+                if (rat != 3 && rat != 4)
+                {
+                    throw new InvalidOperationException("Unknown network type.");
+                }
+
+                var xmciLines = GetXMCILines(xmci, rat);
+                if (xmciLines == null || xmciLines.Count == 0)
+                    throw new InvalidOperationException("XMCI lines not found.");
+
+                DecoderXS(bwlist[0], ta, rat, xmciLines[0]);
+                XMCIDecoder(xmciLines, rat, bwlist);
             }
-            catch (Exception ex) { Close(true); MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            catch (Exception ex)
+            {
+                Close(true);
+                MessageBox.Show(ex.Message + "\r\n" + ex.StackTrace, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         public void Dispose()
@@ -149,8 +177,8 @@ namespace FibocomMonitor.AT
                         !match.Groups["RSRQ"].Success)
                         continue;
 
-                    int pci = int.Parse(match.Groups["PCI"].Value, NumberStyles.HexNumber);
-                    int earfcn = int.Parse(match.Groups["EARFCN"].Value, NumberStyles.HexNumber);
+                    int pci = Convert.ToInt32(match.Groups["PCI"].Value, 16);
+                    int earfcn = Convert.ToInt32(match.Groups["EARFCN"].Value, 16);
 
                     if (!int.TryParse(match.Groups["RSRP"].Value, out int rawRsrp))
                         continue;
@@ -296,7 +324,7 @@ namespace FibocomMonitor.AT
         [GeneratedRegex(@"\+XLEC:\s*\d+,\s*\d+,\s*(?<bwlist>(?:\d+,?)*)", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled)]
         private static partial Regex XLECRegex();
 
-        [GeneratedRegex(@"\+XCCINFO:\s*\d+,\s*\d+,\s*\d+,\s*""[^""]*"",\s*\d+,\s*\d+,\s*""[^""]*"",\s*(?<ta>\d+),", RegexOptions.IgnoreCase | RegexOptions.Multiline)]
+        [GeneratedRegex(@"\+XCCINFO:\s*\d+,\s*\d+,\s*\d+,\s*""[^""]*"",\s*\d+,\s*\d+,\s*""[^""]*"",\s*(?<ta>\d+),", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled)]
         private static partial Regex XCCINFORegex();
 
         [GeneratedRegex(XMCIR, RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled)]
@@ -305,19 +333,19 @@ namespace FibocomMonitor.AT
         [GeneratedRegex(XMCIRUMTS, RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled)]
         private static partial Regex XMCIRegexUMTS();
 
-        [GeneratedRegex(@"\+XMCI:\s*(?<Type>[34])", RegexOptions.IgnoreCase)]
+        [GeneratedRegex(@"\+XMCI:\s*(?<Type>\d+)", RegexOptions.IgnoreCase | RegexOptions.Multiline)]
         private static partial Regex XMCIFindRat();
 
-        [GeneratedRegex(@"\+COPS: \d+,\d+,""(?<Operator>[^""]+)"",(?<Type>\d+)", RegexOptions.IgnoreCase)]
+        [GeneratedRegex(@"\+COPS: \d+,\d+,""(?<Operator>[^""]+)"",(?<Type>\d+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex COPSRegex();
 
-        [GeneratedRegex(@"\+CSQ:\s(?<rssi>\d+),(?<sg>\d+)", RegexOptions.IgnoreCase)]
+        [GeneratedRegex(@"\+CSQ:\s(?<rssi>\d+),(?<sg>\d+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex CSQRegex();
 
-        [GeneratedRegex(@"\+CPIN:\sSIM\sPIN[0-9]+", RegexOptions.None)]
+        [GeneratedRegex(@"\+CPIN:\sSIM\sPIN\d", RegexOptions.None)]
         private static partial Regex CPINRegex();
 
-        [GeneratedRegex(@"\+MTSM:\s[0-9]+", RegexOptions.None)]
+        [GeneratedRegex(@"\+MTSM:\s\d+", RegexOptions.None)]
         private static partial Regex MTSMRegex();
         #endregion
 
@@ -331,13 +359,13 @@ namespace FibocomMonitor.AT
 
             Port.DiscardInBuffer();
             Port.DiscardOutBuffer();
-            Port.WriteTimeout = 500; // Write timeout
+            Port.WriteTimeout = 500;
             Port.Write(command + "\r");
 
             var sb = new System.Text.StringBuilder();
-            var deadline = DateTime.UtcNow.AddMilliseconds(3000); // Read timeout
+            var deadline = DateTime.UtcNow.AddMilliseconds(3000);
 
-            while (DateTime.UtcNow < deadline && IsOpen != true)
+            while (DateTime.UtcNow < deadline && IsOpen)
             {
                 if (Port.BytesToRead > 0)
                 {
@@ -346,16 +374,20 @@ namespace FibocomMonitor.AT
 
                     if (txt.Contains("\r\nOK\r\n") ||
                         txt.Contains("\r\nERROR\r\n") ||
-                        txt.IndexOf("+CME ERROR", StringComparison.OrdinalIgnoreCase) >= 0)
+                        txt.Contains("+CME ERROR", StringComparison.OrdinalIgnoreCase))
                     {
                         break;
+                    }
+                    else
+                    {
+                        sb.Clear();
                     }
                 }
                 else
                 {
                     try
                     {
-                        Task.Delay(50).ConfigureAwait(false);
+                        Thread.Sleep(50);
                     }
                     catch (OperationCanceledException) { break; }
                 }
@@ -420,7 +452,7 @@ namespace FibocomMonitor.AT
             if (rat == 4)
             {
                 var result = XMCIRegexLte().Matches(response);
-                if(result == null || result.Count == 0)
+                if (result == null || result.Count == 0)
                 {
                     throw new Exception("XMCI return null.");
                 }
@@ -576,21 +608,21 @@ namespace FibocomMonitor.AT
                 serial.Open();
                 if (serial.IsOpen)
                 {
-                    serial.Close(); 
-                    serial.Dispose(); 
-                    return true; 
+                    serial.Close();
+                    serial.Dispose();
+                    return true;
                 }
                 else
-                { 
-                    serial.Close(); 
-                    serial.Dispose(); 
-                    return false; 
+                {
+                    serial.Close();
+                    serial.Dispose();
+                    return false;
                 }
             }
-            catch 
+            catch
             {
                 serialPort = null;
-                return false; 
+                return false;
             }
         }
 
@@ -608,7 +640,7 @@ namespace FibocomMonitor.AT
         private void CheckSerial()
         {
             string mtsm = SendAndRead("AT+MTSM=1");
-            if(!mtsm.Contains("ERROR"))
+            if (!mtsm.Contains("ERROR"))
             {
                 IsGL860 = true;
             }
