@@ -30,7 +30,7 @@
         {
             Operator = new Label();
             LB1 = new Label();
-            LB2 = new Label();
+            Lrsrp = new Label();
             RSRP = new Label();
             LB4 = new Label();
             Band = new Label();
@@ -42,15 +42,15 @@
             LB6 = new Label();
             StatusNetwork = new Label();
             FCN = new Label();
-            LB9 = new Label();
+            Lsinr = new Label();
             SINR = new Label();
             LB11 = new Label();
             label1 = new Label();
-            label3 = new Label();
+            Lrssi = new Label();
             RSSI = new Label();
             label2 = new Label();
             Signal = new Label();
-            label4 = new Label();
+            Ldistance = new Label();
             Distance = new Label();
             label5 = new Label();
             Temp = new Label();
@@ -75,14 +75,14 @@
             LB1.TabIndex = 1;
             LB1.Text = "Operator:";
             // 
-            // LB2
+            // Lrsrp
             // 
-            LB2.AutoSize = true;
-            LB2.Location = new Point(212, 76);
-            LB2.Name = "LB2";
-            LB2.Size = new Size(46, 20);
-            LB2.TabIndex = 2;
-            LB2.Text = "RSRP:";
+            Lrsrp.AutoSize = true;
+            Lrsrp.Location = new Point(212, 76);
+            Lrsrp.Name = "Lrsrp";
+            Lrsrp.Size = new Size(46, 20);
+            Lrsrp.TabIndex = 2;
+            Lrsrp.Text = "RSRP:";
             // 
             // RSRP
             // 
@@ -187,14 +187,14 @@
             FCN.TabIndex = 16;
             FCN.Text = "Unknown";
             // 
-            // LB9
+            // Lsinr
             // 
-            LB9.AutoSize = true;
-            LB9.Location = new Point(212, 104);
-            LB9.Name = "LB9";
-            LB9.Size = new Size(44, 20);
-            LB9.TabIndex = 19;
-            LB9.Text = "SINR:";
+            Lsinr.AutoSize = true;
+            Lsinr.Location = new Point(212, 107);
+            Lsinr.Name = "Lsinr";
+            Lsinr.Size = new Size(44, 20);
+            Lsinr.TabIndex = 19;
+            Lsinr.Text = "SINR:";
             // 
             // SINR
             // 
@@ -224,14 +224,14 @@
             label1.TabIndex = 22;
             label1.Text = "Main cell:";
             // 
-            // label3
+            // Lrssi
             // 
-            label3.AutoSize = true;
-            label3.Location = new Point(212, 137);
-            label3.Name = "label3";
-            label3.Size = new Size(41, 20);
-            label3.TabIndex = 24;
-            label3.Text = "RSSI:";
+            Lrssi.AutoSize = true;
+            Lrssi.Location = new Point(212, 137);
+            Lrssi.Name = "Lrssi";
+            Lrssi.Size = new Size(41, 20);
+            Lrssi.TabIndex = 24;
+            Lrssi.Text = "RSSI:";
             // 
             // RSSI
             // 
@@ -262,20 +262,20 @@
             Signal.TabIndex = 27;
             Signal.Text = "Unknown";
             // 
-            // label4
+            // Ldistance
             // 
-            label4.AutoSize = true;
-            label4.Location = new Point(215, 201);
-            label4.Name = "label4";
-            label4.Size = new Size(69, 20);
-            label4.TabIndex = 28;
-            label4.Text = "Distance:";
+            Ldistance.AutoSize = true;
+            Ldistance.Location = new Point(212, 201);
+            Ldistance.Name = "Ldistance";
+            Ldistance.Size = new Size(69, 20);
+            Ldistance.TabIndex = 28;
+            Ldistance.Text = "Distance:";
             // 
             // Distance
             // 
             Distance.AutoSize = true;
             Distance.Font = new Font("Segoe UI", 10F);
-            Distance.Location = new Point(290, 201);
+            Distance.Location = new Point(287, 201);
             Distance.Name = "Distance";
             Distance.Size = new Size(82, 23);
             Distance.TabIndex = 29;
@@ -309,15 +309,15 @@
             Controls.Add(Temp);
             Controls.Add(label5);
             Controls.Add(Distance);
-            Controls.Add(label4);
+            Controls.Add(Ldistance);
             Controls.Add(Signal);
             Controls.Add(label2);
             Controls.Add(RSSI);
-            Controls.Add(label3);
+            Controls.Add(Lrssi);
             Controls.Add(label1);
             Controls.Add(LB11);
             Controls.Add(SINR);
-            Controls.Add(LB9);
+            Controls.Add(Lsinr);
             Controls.Add(FCN);
             Controls.Add(StatusNetwork);
             Controls.Add(LB6);
@@ -329,7 +329,7 @@
             Controls.Add(Band);
             Controls.Add(LB4);
             Controls.Add(RSRP);
-            Controls.Add(LB2);
+            Controls.Add(Lrsrp);
             Controls.Add(LB1);
             Controls.Add(Operator);
             Name = "MainWindow";
@@ -343,7 +343,7 @@
 
         private Label Operator;
         private Label LB1;
-        private Label LB2;
+        private Label Lrsrp;
         private Label RSRP;
         private Label LB4;
         private Label Band;
@@ -355,15 +355,15 @@
         private Label LB6;
         private Label StatusNetwork;
         private Label FCN;
-        private Label LB9;
+        private Label Lsinr;
         private Label SINR;
         private Label LB11;
         private Label label1;
-        private Label label3;
+        private Label Lrssi;
         private Label RSSI;
         private Label label2;
         private Label Signal;
-        private Label label4;
+        private Label Ldistance;
         private Label Distance;
         private Label label5;
         private Label Temp;

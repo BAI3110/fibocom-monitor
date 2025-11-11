@@ -5,7 +5,7 @@ namespace FibocomMonitor
 {
     public partial class MainWindow : Form
     {
-        private AtHost ATH;
+        private AtHost? ATH;
         private bool FindCOM = true;
         private CancellationTokenSource UICts = new();
 
@@ -38,22 +38,33 @@ namespace FibocomMonitor
         {
             while (ATH.IsOpen && !UICts.IsCancellationRequested)
             {
-                await ATH.SendCommand().WaitAsync(UICts.Token);
-                Data data = ATH.Result;
+                ATH.SendCommand();
+                Data? data = (Data)ATH.Result.Clone();
                 CarrierList.Items.Clear();
-                CarrierList.Items.AddRange([.. data.BandList]);
+                CarrierList.Items.AddRange(data.BandList.ToArray());
                 Operator.Text = data.Operator;
                 StatusNetwork.Text = data.StatusNetwork;
+                if (data.StatusNetwork == "LTE")
+                {
+                    FCN.Text = data.EARFCN; LB5.Text = "EARFCN:";
+                    SINR.Text = data.SINR;
+                    RSRP.Text = data.RSRP;
+                }
+                else
+                {
+                    Ldistance.Visible = false;
+                    FCN.Text = data.UARFCN; LB5.Text = "UARFCN:";
+                    Lsinr.Text = "ECNO:";
+                    SINR.Text = data.ECNO;
+                    Lrsrp.Text = "RSCP:";
+                    RSRP.Text = data.RSCP;
+                }
                 Temp.Text = data.TEMP;
-                RSRP.Text = data.RSRP;
-                if (data.StatusNetwork == "LTE") { FCN.Text = data.EARFCN; LB5.Text = "EARFCN:"; } else { FCN.Text = data.UARFCN; LB5.Text = "UARFCN:"; }
                 Band.Text = data.Band;
-                SINR.Text = data.SINR;
                 RSSI.Text = data.RSSI;
                 Signal.Text = data.SignalStrength;
                 Distance.Text = data.Distance;
                 await Task.Delay(1500, UICts.Token);
-                data.Clear();
             }
             ClearDisplay();
         }
@@ -61,8 +72,8 @@ namespace FibocomMonitor
         private async void ButtonCon_Click(object sender, EventArgs e)
         {
             FindCOM = false;
-            string ATPort = COMList.SelectedItem as string;
-            if (ATPort != null || !string.IsNullOrEmpty(ATPort))
+            string ATPort = (string)COMList.SelectedItem;
+            if (!string.IsNullOrEmpty(ATPort))
             {
                 if (ATH != null && ATH.IsOpen == true)
                 {

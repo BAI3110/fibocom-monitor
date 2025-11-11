@@ -14,7 +14,5 @@ namespace FibocomMonitor
             ApplicationConfiguration.Initialize();
             Application.Run(new MainWindow());
         }
-
-        public const string Version = "0.1.0";
     }
 }
