@@ -142,6 +142,7 @@
             // 
             // COMList
             // 
+            COMList.DropDownStyle = ComboBoxStyle.DropDownList;
             COMList.FormattingEnabled = true;
             COMList.Location = new Point(12, 8);
             COMList.Name = "COMList";

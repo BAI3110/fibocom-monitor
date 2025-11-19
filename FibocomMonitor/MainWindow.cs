@@ -7,11 +7,12 @@ namespace FibocomMonitor
     {
         private AtHost? ATH;
         private bool FindCOM = true;
-        private CancellationTokenSource UICts = new();
+        private readonly CancellationTokenSource UICts;
 
         public MainWindow()
         {
             InitializeComponent();
+            UICts = new CancellationTokenSource();
             base.FormClosing += MainWindow_FormClosing;
             base.Load += MainWindow_FormLoad;
         }
@@ -38,7 +39,7 @@ namespace FibocomMonitor
         {
             while (ATH.IsOpen && !UICts.IsCancellationRequested)
             {
-                ATH.SendCommand();
+                ATH.Start();
                 Data? data = (Data)ATH.Result.Clone();
                 CarrierList.Items.Clear();
                 CarrierList.Items.AddRange(data.BandList.ToArray());
@@ -47,6 +48,8 @@ namespace FibocomMonitor
                 if (data.StatusNetwork == "LTE")
                 {
                     FCN.Text = data.EARFCN; LB5.Text = "EARFCN:";
+                    Lrsrp.Text = "RSRP:";
+                    Lsinr.Text = "SINR:";
                     SINR.Text = data.SINR;
                     RSRP.Text = data.RSRP;
                 }
@@ -66,7 +69,6 @@ namespace FibocomMonitor
                 Distance.Text = data.Distance;
                 await Task.Delay(1500, UICts.Token);
             }
-            ClearDisplay();
         }
 
         private async void ButtonCon_Click(object sender, EventArgs e)
@@ -81,12 +83,20 @@ namespace FibocomMonitor
                     return;
                 }
                 ATH = new AtHost(ATPort);
-                if(ATH.IsGL860)
+                if(ATH.IsL860)
                 {
                     Temp.Visible = true;
                     label5.Visible = true;
                 }
-                await UIUpdateAsync();
+                try
+                {
+                    await UIUpdateAsync();
+                }
+                catch(OperationCanceledException) { }
+                finally
+                {
+                    ClearDisplay();
+                }
             }
         }
 
@@ -133,11 +143,21 @@ namespace FibocomMonitor
                 var ports = SerialPort.GetPortNames();
                 if (ports.Length > 0)
                 {
-                    COMList.Items.Clear();
-                    COMList.Items.AddRange(ports);
+                    if (!this.IsHandleCreated || this.IsDisposed)
+                        break;
+                    this.Invoke(() =>
+                    {
+
+                        COMList.Items.Clear();
+                        COMList.Items.AddRange(ports);
+                    });
                     break;
                 }
-                await Task.Delay(500);
+                try
+                {
+                    await Task.Delay(500, UICts.Token);
+                }
+                catch(OperationCanceledException) { break; }
             }
         }
     }
