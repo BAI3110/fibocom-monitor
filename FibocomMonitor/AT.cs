@@ -1,6 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using System.IO.Ports;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -24,13 +22,6 @@ namespace FibocomMonitor.AT
         public string EARFCN { get; set; } = string.Empty;
         public string TEMP { get; set; } = string.Empty;
         public List<string> BandList { get; set; } = new List<string>();
-
-        public void Clear()
-        {
-            RSSI = RSRP = RSRQ = SINR = RSCP = ECNO = Band = SignalStrength =
-            Distance = StatusNetwork = Operator = UARFCN = EARFCN = TEMP = string.Empty;
-            BandList.Clear();
-        }
 
         public object Clone()
         {
@@ -59,10 +50,77 @@ namespace FibocomMonitor.AT
     {
         private readonly SerialPort Port;
         private readonly StringBuilder SB;
-        private bool disposed = false;
-        public bool IsGL860 = false;
 
-        public bool IsOpen { get; private set; } = false;
+        private bool disposed = false;
+        private static readonly char[] SplitChars = new[] { ':', ',' };
+
+        public bool IsL860 = false;
+
+        private static readonly (int MaxChannel, string Band)[] LteBands =
+            {
+    (599,   "B1"),
+    (1199,  "B2"),
+    (1949,  "B3"),
+    (2399,  "B4"),
+    (2649,  "B5"),
+    (2749,  "B6"),
+    (3449,  "B7"),
+    (3799,  "B8"),
+    (4139,  "B9"),
+    (4749,  "B10"),
+    (4999,  "B11"),
+    (5179,  "B12"),
+    (5279,  "B13"),
+    (5379,  "B14"),
+    (5599,  "B17"),
+    (5799,  "B18"),
+    (5999,  "B19"),
+    (6149,  "B20"),
+    (6449,  "B21"),
+    (6599,  "B22"),
+    (6599,  "B23"),
+    (7399,  "B24"),
+    (7699,  "B25"),
+    (8039,  "B26"),
+    (8189,  "B27"),
+    (8689,  "B28"),
+    (10359, "B29"),
+    (11059, "B30"),
+    (11139, "B31"),
+    (12687, "B32"),
+    (13259, "B33"),
+    (13959, "B34"),
+    (14359, "B35"),
+    (14759, "B36"),
+    (15159, "B37"),
+    (15559, "B38"),
+    (16559, "B39"),
+    (17359, "B40"),
+    (18359, "B41"),
+    (19959, "B42"),
+    (20359, "B43"),
+    (23279, "B44"),
+    (23779, "B45"),
+    (26279, "B46"),
+    (26639, "B47"),
+    (28159, "B48"),
+    (34589, "B49"),
+    (39649, "B50"),
+    (41589, "B51"),
+    (43589, "B52"),
+    (45589, "B53"),
+    (46589, "B54"),
+    (49689, "B65"),
+    (54539, "B66"),
+    (55239, "B67"),
+    (56739, "B68"),
+    (58239, "B69"),
+    (59039, "B70"),
+    (59739, "B71")
+};
+
+
+        public bool IsOpen { get => Port.IsOpen; }
         public Data Result { get; private set; }
 
         public AtHost(string serialport)
@@ -75,17 +133,19 @@ namespace FibocomMonitor.AT
             Port.RtsEnable = true;
             Port.NewLine = "\r";
             Port.WriteTimeout = 500;
-            Port.PinChanged += Port_PinChanged;
             try
             {
-                Open();
+                Port.Open();
             }
+#if !DEBUG
             catch (Exception ex)
             {
-                Close(true);
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
+                Dispose();
+                MessageBox.Show(ex.Message + "\r\n" + ex.StackTrace, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+#else
+            catch (PlatformNotSupportedException) { }
+#endif
             CheckSerial();
         }
 
@@ -94,95 +154,79 @@ namespace FibocomMonitor.AT
             Dispose(false);
         }
 
-        private void Port_PinChanged(object sender, SerialPinChangedEventArgs e)
-        {
-            if (!IsOpen) return;
 
-            switch (e.EventType)
-            {
-                case SerialPinChange.CDChanged:
-                case SerialPinChange.DsrChanged:
-                case SerialPinChange.CtsChanged:
-                    Close(true);
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        public void SendCommand()
+        public void Start()
         {
             try
             {
                 CheckSIM();
-                if (IsGL860)
+
+                if (IsL860)
                 {
                     string mtsm = SendAndRead("AT+MTSM=1");
-                    var mMtsm = MTSMRegex().Match(mtsm);
-                    Result.TEMP = mMtsm.Success ? mMtsm.Value : string.Empty;
+                    if (mtsm.Contains("+MTSM:"))
+                        Result.TEMP = mtsm.Split("+MTSM:")[1].Trim();
                 }
 
-                string cops = SendAndRead("AT+COPS?");
-                DecoderCOPS(cops);
+                DecoderCOPS(SendAndRead("AT+COPS?"));
 
-                string csq = SendAndRead("AT+CSQ?");
-                DecoderCSQ(csq);
+                DecoderCSQ(SendAndRead("AT+CSQ?"));
 
-                string xccinfo = SendAndRead("AT+XCCINFO?");
-                var mXcc = XCCINFORegex().Match(xccinfo);
-                if (!mXcc.Success || !int.TryParse(mXcc.Groups["ta"].Value, out int ta))
-                    throw new InvalidOperationException("Failed to parse TA from XCCINFO response.");
+                var mXcc = XCCINFORegex().Match(SendAndRead("AT+XCCINFO?"));
+                if (!mXcc.Success)
+                    throw new InvalidOperationException("Invalid XCCINFO response.");
+
+                if (!int.TryParse(mXcc.Groups["ta"].Value, out int ta))
+                    throw new InvalidOperationException("Failed to parse TA.");
 
                 string xmci = SendAndRead("AT+XMCI=1");
 
-                Match ratMatch = XMCIFindRat().Match(xmci);
-                if (!ratMatch.Groups["Type"].Success || !int.TryParse(ratMatch.Groups["Type"].Value, out int rat))
-                {
-                    throw new InvalidOperationException("XMCI return null.");
-                }
+                var ratMatch = XMCIFindRat().Match(xmci);
+                if (!ratMatch.Success || !int.TryParse(ratMatch.Groups["Type"].Value, out int rat))
+                    throw new InvalidOperationException("XMCI: RAT not found.");
 
-                Debug.WriteLine("RAT:" + rat);
-
-                if (rat < 2 || rat > 7)
-                {
-                    throw new InvalidOperationException("Unknown network type.");
-                }
+                if (rat == 2 || rat == 7)
+                    throw new InvalidOperationException("Invalid RAT type.");
 
                 int[] bwlist = Array.Empty<int>();
                 if (rat == 3 || rat == 7)
                 {
-                    string xlec = SendAndRead("AT+XLEC?");
-                    var mXlec = XLECRegex().Match(xlec);
-                    if (!mXlec.Success) throw new InvalidOperationException("Failed to parse XLEC response.");
-                    bwlist = mXlec.Value.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                        .Select(s =>
-                        {
-                            if(s.Contains("+XLEC:"))
-                            {
-                               return int.Parse(s.Replace("+XLEC:","").Trim());
-                            }
-                            if(s.Contains("BAND_LTE_"))
-                            {
-                                return 0;
-                            }
-                            return int.Parse(s.Trim());
-                        }).ToArray();
-                    if (bwlist.Length == 0) throw new InvalidOperationException("No bandwidth codes found in XLEC.");
+                    var mXlec = XLECRegex().Match(SendAndRead("AT+XLEC?"));
+                    if (!mXlec.Success)
+                        throw new InvalidOperationException("Invalid XLEC response.");
+
+                    bwlist = mXlec.Groups["bw"].Captures
+                        .Select(c => int.Parse(c.Value))
+                        .ToArray();
+
+                    if (bwlist.Length == 0)
+                        throw new InvalidOperationException("XLEC returned no BW values.");
                 }
 
-                var xmciLines = GetXMCILines(xmci, rat);
-                if (xmciLines == null || xmciLines.Count == 0)
-                    throw new InvalidOperationException("XMCI lines not found.");
+                var xmciLines = xmci
+                    .Split("\n", StringSplitOptions.RemoveEmptyEntries)
+                    .Where(x => x.Contains("+XMCI:"))
+                    .ToArray();
 
-                DecoderXS(ta, rat, xmciLines[0]);
+                if (xmciLines.Length == 0)
+                    throw new InvalidOperationException("XMCI returned no carriers.");
+
+                //DecoderXS(ta, rat, xmci);
+                DecoderXS(rat, xmci);
+
                 XMCIDecoder(xmciLines, rat, bwlist);
             }
+#if !DEBUG
             catch (Exception ex)
             {
-                Close(true);
-                MessageBox.Show(ex.Message + "\r\n" + ex.StackTrace, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+               Dispose();
+               MessageBox.Show($"{ex.Message}\r\n{ex.StackTrace}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+#else
+            catch (PlatformNotSupportedException) { }
+#endif
         }
+
 
         protected virtual void Dispose(bool disposing)
         {
@@ -190,7 +234,10 @@ namespace FibocomMonitor.AT
 
             if (disposing)
             {
-                Port.Close();
+                if (Port.IsOpen)
+                {
+                    Port.Close();
+                }
                 Port.Dispose();
             }
             disposed = true;
@@ -202,109 +249,93 @@ namespace FibocomMonitor.AT
             GC.SuppressFinalize(this);
         }
 
-        private void Close(bool dispose)
-        {
-            IsOpen = false;
-            Port.Close();
-            if (dispose) { Dispose(); }
-        }
-
-        private void Open()
-        {
-            Port.Open();
-            IsOpen = true;
-        }
-
         #region Decoder
-        private void XMCIDecoder(MatchCollection matches, int rat, int[] bwcodes)
+        // 4G XMCI
+        //      Значение(Тип)    Индекс в массиве
+        //      RAT(INT)         0
+        //      MCC(INT)         1
+        //      MNC(INT)         2
+        //      TAC(HEX)         3
+        //      CGI/ECI(HEX)     4
+        //      PCI(HEX)         5
+        //      CI/eNodeB        6 
+        //      EARFCN DL(HEX)   7
+        //      EARFCN UL(HEX)   8 Не используется
+        //      raw RSRP(INT)    9
+        //      raw RSRQ(INT)    10
+        //      raw SINR(INT)    11
+        //      TA(HEX)          12
+        private void XMCIDecoder(string[] lines, int rat, int[] bwcodes) // Список вышек
         {
             string bandAccum = string.Empty;
             int idx = 0;
 
-            for (int i = 0; i < matches.Count; i++)
+            Result.BandList.Clear();
+
+            for (int i = 0; i < lines.Length; i++)
             {
-                Match match = matches[i];
-                if (!match.Success)
-                    continue;
+                Debug.WriteLine($"Line {i}: {lines[i]}");
 
-                if (rat == 4 || rat == 7) // 4G
+                string[] line = lines[i].Split(SplitChars, StringSplitOptions.RemoveEmptyEntries);
+
+                if (line[0].StartsWith("+XMCI"))
                 {
-                    if (!match.Groups["PCI"].Success ||
-                        !match.Groups["EARFCN"].Success ||
-                        !match.Groups["RSRP"].Success ||
-                        !match.Groups["RSRQ"].Success)
-                        continue;
-
-                    int pci,earfcn;
-                    try
-                    {
-                        pci = Convert.ToInt32(match.Groups["PCI"].Value, 16);
-                        earfcn = Convert.ToInt32(match.Groups["EARFCN"].Value, 16);
-                    }
-                    catch { continue; }
-
-                    if (!int.TryParse(match.Groups["RSRP"].Value, out int rawRsrp))
-                        continue;
-                    if (!int.TryParse(match.Groups["RSRQ"].Value, out int rawRsrq))
-                        continue;
-
-                    int rsrp = rawRsrp - 141;
-                    int rsrq = rawRsrq / 2 - 20;
-                    string band = GetBandLte(earfcn.ToString());
-
-                    int ci = 0;
-                    if (match.Groups["eNodeB"].Success &&
-                        int.TryParse(match.Groups["eNodeB"].Value, NumberStyles.HexNumber, null, out int parsedEnodeB))
-                    {
-                        ci = (parsedEnodeB << 8) | pci;
-                    }
-
-                    string bandPart = band;
-                    int bw = (idx < bwcodes.Length) ? bwcodes[idx] : bwcodes.LastOrDefault();
-                    bandPart += $"|{GetBandwidthFrequency(bw)}MHz";
-                    if (idx <= 3) bandAccum += bandPart + " ";
-
-                    Result.BandList.Add($"Carrier {idx}: CI: {ci} PCI: {pci} Band (EARFCN): {band} ({earfcn}) RSRP: {rsrp}dBm  RSRQ: {rsrq}dB");
+                    line[0] = line[0].Replace("+XMCI", "").Trim();
                 }
-                else if (rat != 3 && rat != 7) // 3G
+
+                if (rat == 4 || rat == 5 || rat == 7) // 4G
                 {
-                    if (!match.Groups["PSC"].Success ||
-                        !match.Groups["UARFCN"].Success ||
-                        !match.Groups["RSCP"].Success ||
-                        !match.Groups["ECNO"].Success ||
-                        !match.Groups["CGI"].Success)
-                        continue;
+                    int earfcn = Convert.ToInt32(line[7].Trim('"'), 16);
+                    int rsrp = int.Parse(line[10].Trim()) - 141;
+                    int rsrq = int.Parse(line[11].Trim()) / 2 - 20;
 
-                    int psc = Convert.ToInt32(match.Groups["PSC"].Value, 16);
-                    int uarfcn = Convert.ToInt32(match.Groups["UARFCN"].Value, 16);
+                    string band = GetBandLte(earfcn);
 
-                    if (!int.TryParse(match.Groups["RSCP"].Value, out int rawRscp))
-                        continue;
-                    if (!int.TryParse(match.Groups["ECNO"].Value, out int rawEcno))
-                        continue;
+                    if(idx == 0)
+                    {
+                        Result.EARFCN = earfcn.ToString();
+                    }
 
-                    long cgi = Convert.ToInt32(match.Groups["CGI"].Value, 16);
+                    if(idx < 4)
+                    {
+                        bandAccum += band + " | ";
+                    }
+
+                    Result.BandList.Add($"Carrier {idx}: EARFCN: {earfcn} Band: {band} RSRP: {rsrp}dBm  RSRQ: {rsrq}dB");
+                }
+                else // 3G
+                {
+                    Debug.WriteLine($"Line {i}: {lines[i]}");
+
+                    int psc = Convert.ToInt32(line[5].Trim('"'), 16);
+                    int uarfcn = Convert.ToInt32(line[6].Trim('"'), 16);
+                    int rawRscp = int.Parse(line[9].Trim('"'));
+                    int rawEcno = int.Parse(line[10].Trim('"'));
+                    long cgi = Convert.ToInt32(line[4].Trim('"'), 16);
+
                     int ci = (int)(cgi & 0xFFFF);
-
                     int rscp = rawRscp - 120;
                     double ecno = (rawEcno / 2.0) - 24;
 
                     if (idx == 0)
+                    {
                         Result.UARFCN = uarfcn.ToString();
+                        Result.RSCP = rscp.ToString();
+                        Result.ECNO = ecno.ToString();
+                    }
 
                     string bandPart = $"{GetBandUMTS(uarfcn.ToString())}";
-                    if (idx < match.Groups.Count)
+                    if (idx < 3)
                     {
                         bandAccum += bandPart + "|";
                     }
-                    else
+                    else if (idx == 3)
                     {
                         bandAccum += bandPart;
                     }
 
                     Result.BandList.Add($"Carrier {idx}: CI: {ci} PSC: {psc} Band (UARFCN): {GetBandUMTS(uarfcn.ToString())} ({uarfcn}) RSCP: {rscp:0}dBm  EcNo: {ecno:0}dB");
                 }
-
                 idx++;
             }
 
@@ -327,36 +358,28 @@ namespace FibocomMonitor.AT
             }
         }
 
-        private void DecoderXS(int ta, int rat, Match xmciLine)
+        private void DecoderXS(int rat, string xmciLine) // Показатели основной вышки
         {
-            if(!xmciLine.Success)
-            {
-                throw new InvalidOperationException("Failed to parse XMCI response.");
-            }
+            ArgumentNullException.ThrowIfNull(xmciLine, nameof(xmciLine));
+
+            string[] values = xmciLine.Split(',');
+
             if (rat == 4 || rat == 7) // 4G
             {
-                int earf = Convert.ToInt32(xmciLine.Groups["EARFCN"].Value, 16);
-                int rsrpVal = int.Parse(xmciLine.Groups["RSRP"].Value) - 141;
-                int rsrqVal = int.Parse(xmciLine.Groups["RSRQ"].Value) / 2 - 20;
-                int sinrVal = int.Parse(xmciLine.Groups["SINR"].Value) / 2;
+                //int earf = Convert.ToInt32(values[7].Trim('"'), 16);
+                int rsrpVal = int.Parse(values[9].Trim('"')) - 141;
+                int rsrqVal = int.Parse(values[10].Trim('"')) / 2 - 20;
+                int sinrVal = int.Parse(values[11].Trim('"')) / 2;
+                int ta = Convert.ToInt32(values[12].Trim('"'), 16);
 
                 Result.RSRP = $"{rsrpVal} dBm";
                 Result.RSRQ = $"{rsrqVal} dB";
                 Result.SINR = $"{sinrVal} dB";
-                Result.EARFCN = earf.ToString();
-            }
-            else if (rat != 3 && rat != 7) // 3G
-            {
-                int uarfcn = Convert.ToInt32(xmciLine.Groups["UARFCN"].Value, 16);
-                int rscp = int.Parse(xmciLine.Groups["RSCP"].Value) - 121;
-                int ecno = int.Parse(xmciLine.Groups["ECNO"].Value) / 2 - 24;
+                //Result.EARFCN = earf.ToString();
 
-                Result.UARFCN = uarfcn.ToString();
-                Result.RSCP = $"{rscp} dBm";
-                Result.ECNO = $"{ecno} dB";
+                if (ta > 0)
+                    Result.Distance = $"{Math.Round((ta * 78.125) / 1000, 3)} km";
             }
-            if (ta > 0)
-                Result.Distance = $"{Math.Round((ta * 78.125) / 1000, 3)} km";
         }
 
         private void DecoderCOPS(string response)
@@ -383,25 +406,11 @@ namespace FibocomMonitor.AT
         #endregion
 
         #region Regex
-
-        [StringSyntax("Regex")]
-        private const string XMCIR = @"\+XMCI:\s*\d,[^,]*,[^,]*,""(?<TA>0x[0-9A-Fa-f]+)"",""(?<eNodeB>0x[0-9A-Fa-f]+)"",""(?<PCI>0x[0-9A-Fa-f]+)"",""(?<EARFCN>0x[0-9A-Fa-f]+)"",""[^""]+"",""[^""]+"",(?<RSRP>\d+),(?<RSRQ>\d+),(?<SINR>\d+)";
-
-        [StringSyntax("Regex")]
-        private const string XMCIRUMTS = @"\+XMCI:\s*\d\s*,\s*[^,]*\s*,\s*[^,]*\s*,\s*""(?<CGI>0x[0-9A-Fa-f]+|\d+)""\s*,\s*""[^""]*""\s*,\s*""(?<PSC>0x[0-9A-Fa-f]+|\d+)""\s*,\s*""(?<UARFCN>0x[0-9A-Fa-f]+|\d+)""\s*,\s*""[^""]*""\s*,\s*""[^""]*""\s*,\s*(?<RSCP>-?\d+)\s*,\s*(?<ECNO>-?\d+)\s*,";
-
-
-        [GeneratedRegex(@"\+XLEC:\s(\d*),(\d*),(\d*),\s*\D*", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled)]
+        [GeneratedRegex(@"\+XLEC: (?:\d+),(?<no_of_cells>\d+),(?:(?<bw>\d+),*)+(?:BAND_LTE_(?:(?<band>\d+),*)+)?", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled)]
         private static partial Regex XLECRegex();
 
         [GeneratedRegex(@"\+XCCINFO:\s*\d+,\s*\d+,\s*\d+,\s*""[^""]*"",\s*\d+,\s*\d+,\s*""[^""]*"",\s*(?<ta>\d+),", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex XCCINFORegex();
-
-        [GeneratedRegex(XMCIR, RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled)]
-        private static partial Regex XMCIRegexLte();
-
-        [GeneratedRegex(XMCIRUMTS, RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled)]
-        private static partial Regex XMCIRegexUMTS();
 
         [GeneratedRegex(@"\+XMCI:\s*(?<Type>\d+)", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled)]
         private static partial Regex XMCIFindRat();
@@ -411,12 +420,6 @@ namespace FibocomMonitor.AT
 
         [GeneratedRegex(@"\+CSQ:\s(?<RSSI>\d+),(?<sg>\d+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex CSQRegex();
-
-        [GeneratedRegex(@"\+CPIN:\sSIM\sPIN\d", RegexOptions.None)]
-        private static partial Regex CPINRegex();
-
-        [GeneratedRegex(@"\+MTSM:\s\d+", RegexOptions.None)]
-        private static partial Regex MTSMRegex();
         #endregion
 
         #region Functions
@@ -443,9 +446,9 @@ namespace FibocomMonitor.AT
 
                     if (txt.Contains("\r\nOK\r\n") ||
                         txt.Contains("\r\nERROR\r\n") ||
-                        txt.Contains("+CME ERROR", StringComparison.OrdinalIgnoreCase))
+                        txt.Contains("+CME ERROR"))
                     {
-                        Debug.WriteLine(txt);
+                        Debug.WriteLine("Response:\r\n" + txt);
                         break;
                     }
                 }
@@ -465,22 +468,19 @@ namespace FibocomMonitor.AT
         {
             if (Port.IsOpen)
             {
-                Close(false);
+                Port.Close();
             }
-            Result.Clear();
         }
 
         public void SetNewPort(string serialport)
         {
-            Close(false);
+            Port.Close();
             Port.PortName = serialport;
-            Open();
+            Port.Open();
         }
 
-        public static double? ConvertRsrpToRssi(double? rsrp, int? bandwidthCode)
+        private static double ConvertRsrpToRssi(double rsrp, int bandwidthCode)
         {
-            if (rsrp == null) throw new ArgumentNullException(nameof(rsrp));
-            if (bandwidthCode == null) throw new ArgumentNullException(nameof(bandwidthCode));
 
             int np = bandwidthCode switch
             {
@@ -501,43 +501,16 @@ namespace FibocomMonitor.AT
             return -113;
         }
 
-        private static double GetBandwidthFrequency(int bwCode) => bwCode switch
+        private static double GetFrequency(int bwCode) => bwCode switch
         {
             0 => 1.4,
-            1 => 20, // !! Старое значение: 3 !!
+            1 => 3,
             2 => 5,
             3 => 10,
             4 => 15,
             5 => 20,
             _ => 0
         };
-
-        private static MatchCollection GetXMCILines(string response, int rat)
-        {
-            if (rat == 3 || rat == 7) // 4G
-            {
-                var result = XMCIRegexLte().Matches(response);
-                if (result == null || result.Count == 0)
-                {
-                    throw new InvalidOperationException("4G: Failed to parse XMCI response.");
-                }
-                return result;
-            }
-            else
-            if (rat != 3 || rat != 7) // 3G
-            {
-                var result = XMCIRegexUMTS().Matches(response);
-                if (result == null || result.Count == 0)
-                {
-                    throw new InvalidOperationException("3G: Failed to parse XMCI response.");
-                }
-                return result;
-            }
-            else
-            {
-                throw new InvalidOperationException();
-            }
-        }
 
         private static string GetBandUMTS(string uarfcn)
         {
@@ -546,7 +519,7 @@ namespace FibocomMonitor.AT
 
             uarfcn = uarfcn.Trim().Trim('"');
 
-            if (!int.TryParse(uarfcn, NumberStyles.Integer, CultureInfo.InvariantCulture, out int channel))
+            if (!int.TryParse(uarfcn, out int channel))
                 return "--";
 
             if (channel is >= 10562 and <= 10838) return "B1";   // 2100 MHz
@@ -559,24 +532,13 @@ namespace FibocomMonitor.AT
         }
 
 
-        private static string GetBandLte(string dluarfnc)
+        private static string GetBandLte(int earfcn)
         {
-            if (string.IsNullOrWhiteSpace(dluarfnc))
-                return "--";
-
-            dluarfnc = dluarfnc.Trim().Trim('"');
-
-            int channel;
-
-            if (!int.TryParse(dluarfnc, out channel))
-                return "--";
-
             foreach (var (MaxChannel, Band) in LteBands)
             {
-                if (channel <= MaxChannel)
+                if (earfcn <= MaxChannel)
                     return Band;
             }
-
             return "--";
         }
 
@@ -599,11 +561,9 @@ namespace FibocomMonitor.AT
         private void CheckSIM()
         {
             string cpin = SendAndRead("AT+CPIN?");
-            if (!CPINRegex().Match(cpin).Success)
+            if (!cpin.Contains("+CPIN: SIM PIN"))
             {
-                Dispose();
-                IsOpen = false;
-                throw new Exception("No SIM.");
+                throw new Exception("No SIM or port not working!");
             }
         }
 
@@ -612,31 +572,10 @@ namespace FibocomMonitor.AT
             string mtsm = SendAndRead("AT+MTSM=1");
             if (!mtsm.Contains("ERROR"))
             {
-                IsGL860 = true;
+                IsL860 = true;
+                Debug.WriteLine("Modem: L860");
             }
         }
-
-        private static readonly (int MaxChannel, string Band)[] LteBands =
-        [
-        (599, "B1"), (1199, "B2"), (1949, "B3"), (2399, "B4"),
-        (2649, "B5"), (2749, "B6"), (3449, "B7"), (3799, "B8"),
-        (4149, "B9"), (4749, "B10"), (4949, "B11"), (5009, "--"),
-        (5179, "B12"), (5279, "B13"), (5379, "B14"), (5729, "--"),
-        (5849, "B17"), (5999, "B18"), (6149, "B19"), (6449, "B20"),
-        (6599, "B21"), (7399, "B22"), (7499, "--"), (7699, "B23"),
-        (8039, "B24"), (8689, "B25"), (9039, "B26"), (9209, "B27"),
-        (9659, "B28"), (9769, "B29"), (9869, "B30"), (9919, "B31"),
-        (10399, "B32"), (35999, "--"), (36199, "B33"), (36349, "B34"),
-        (36949, "B35"), (37549, "B36"), (37749, "B37"), (38249, "B38"),
-        (38649, "B39"), (39649, "B40"), (41589, "B41"), (43589, "B42"),
-        (45589, "B43"), (46589, "B44"), (46789, "B45"), (54539, "B46"),
-        (55239, "B47"), (56739, "B48"), (58239, "B49"), (59089, "B50"),
-        (59139, "B51"), (60139, "B52"), (60254, "B53"), (65535, "--"),
-        (66435, "B65"), (67335, "B66"), (67535, "B67"), (67835, "B68"),
-        (68335, "B69"), (68585, "B70"), (68935, "B71"), (68985, "B72"),
-        (69035, "B73"), (69465, "B74"), (70315, "B75"), (70365, "B76"),
-        (70545, "B85"), (70595, "B87"), (70645, "B88")
-        ];
 
         #endregion
     }
