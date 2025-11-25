@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace FibocomMonitor
 {
     internal static class Program
@@ -10,7 +12,7 @@ namespace FibocomMonitor
         {
             // To customize application configuration such as set high DPI settings or default font,
             // see https://aka.ms/applicationconfiguration.
-            System.Diagnostics.Trace.Listeners.Add(new System.Diagnostics.ConsoleTraceListener());
+            Trace.Listeners.Add(new ConsoleTraceListener());
             ApplicationConfiguration.Initialize();
             Application.Run(new MainWindow());
         }
