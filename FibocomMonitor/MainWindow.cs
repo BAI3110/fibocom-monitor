@@ -35,9 +35,94 @@ namespace FibocomMonitor
             }
         }
 
+        private async void ButtonCon_Click(object sender, EventArgs e)
+        {
+            string? ATPort = (string?)COMList.SelectedItem;
+            if (ATPort == null)
+            {
+                MessageBox.Show("No selected COM port!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            FindCOM = false;
+            ATPort = ExtractComPort(ATPort);
+            if (!string.IsNullOrEmpty(ATPort))
+            {
+                if (ATH != null && ATH.IsOpen == true)
+                {
+                    ATH.SetNewPort(ATPort);
+                    return;
+                }
+                ATH = new AtHost(ATPort);
+                if(ATH.IsL860)
+                {
+                    Temp.Visible = true;
+                    label5.Visible = true;
+                }
+                try
+                {
+                    await UIUpdateAsync();
+                }
+                catch(OperationCanceledException) { }
+                finally
+                {
+                    ClearDisplay();
+                }
+            }
+        }
+
+        private void PortClose_Click(object sender, EventArgs e)
+        {
+            if (COMList.SelectedItem is string ATPort)
+            {
+                if (ATH != null)
+                {
+                    if (ATH.IsOpen == true)
+                    {
+                        ATH.ClosePort();
+                    }
+                    ClearDisplay();
+                    return;
+                }
+                string port = ExtractComPort(ATPort);
+                if (AtHost.Check(port, out SerialPort? serial))
+                {
+                    serial?.Close();
+                    serial?.Dispose();
+                }
+            }
+        }
+
+        private async Task RefreshComListAsync()
+        {
+            while (FindCOM && !UICts.IsCancellationRequested)
+            {
+                var ports = ComPortHelper.GetComPortList();
+                if (ports.Count > 0)
+                {
+
+                    if (!this.IsHandleCreated || this.IsDisposed)
+                        break;
+                    this.Invoke(() =>
+                    {
+                        COMList.Items.Clear();
+                        COMList.Items.AddRange(ports.ToArray());
+                    });
+                    break;
+                }
+                try
+                {
+                    await Task.Delay(500, UICts.Token);
+                }
+                catch(OperationCanceledException) { break; }
+            }
+        }
+
         private async Task UIUpdateAsync()
         {
+#pragma warning disable CS8602
             while (ATH.IsOpen && !UICts.IsCancellationRequested)
+#pragma warning restore CS8602
             {
                 ATH.Start();
                 Data? data = (Data)ATH.Result.Clone();
@@ -71,35 +156,6 @@ namespace FibocomMonitor
             }
         }
 
-        private async void ButtonCon_Click(object sender, EventArgs e)
-        {
-            FindCOM = false;
-            string ATPort = (string)COMList.SelectedItem;
-            if (!string.IsNullOrEmpty(ATPort))
-            {
-                if (ATH != null && ATH.IsOpen == true)
-                {
-                    ATH.SetNewPort(ATPort);
-                    return;
-                }
-                ATH = new AtHost(ATPort);
-                if(ATH.IsL860)
-                {
-                    Temp.Visible = true;
-                    label5.Visible = true;
-                }
-                try
-                {
-                    await UIUpdateAsync();
-                }
-                catch(OperationCanceledException) { }
-                finally
-                {
-                    ClearDisplay();
-                }
-            }
-        }
-
         private void ClearDisplay()
         {
             string s = "Unknown";
@@ -115,50 +171,18 @@ namespace FibocomMonitor
             Distance.Text = s;
         }
 
-        private void PortClose_Click(object sender, EventArgs e)
+        private static string ExtractComPort(string text)
         {
-            if (COMList.SelectedItem is string ATPort)
+            var m = System.Text.RegularExpressions.Regex.Match(text, @"\(COM\d+\)");
+            if(m.Success)
             {
-                if (ATH != null)
-                {
-                    if (ATH.IsOpen == true)
-                    {
-                        ATH.ClosePort();
-                    }
-                    ClearDisplay();
-                    return;
-                }
-                if (AtHost.Check(ATPort, out SerialPort? serial))
-                {
-                    serial?.Close();
-                    serial?.Dispose();
-                }
+                return m.Value;
+            }
+            else
+            {
+                return string.Empty; 
             }
         }
 
-        private async Task RefreshComListAsync()
-        {
-            while (FindCOM)
-            {
-                var ports = SerialPort.GetPortNames();
-                if (ports.Length > 0)
-                {
-                    if (!this.IsHandleCreated || this.IsDisposed)
-                        break;
-                    this.Invoke(() =>
-                    {
-
-                        COMList.Items.Clear();
-                        COMList.Items.AddRange(ports);
-                    });
-                    break;
-                }
-                try
-                {
-                    await Task.Delay(500, UICts.Token);
-                }
-                catch(OperationCanceledException) { break; }
-            }
-        }
     }
 }

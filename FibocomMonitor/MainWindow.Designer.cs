@@ -132,7 +132,7 @@
             // 
             // buttonCon
             // 
-            buttonCon.Location = new Point(169, 7);
+            buttonCon.Location = new Point(13, 7);
             buttonCon.Name = "buttonCon";
             buttonCon.Size = new Size(94, 29);
             buttonCon.TabIndex = 11;
@@ -144,14 +144,14 @@
             // 
             COMList.DropDownStyle = ComboBoxStyle.DropDownList;
             COMList.FormattingEnabled = true;
-            COMList.Location = new Point(12, 8);
+            COMList.Location = new Point(218, 7);
             COMList.Name = "COMList";
-            COMList.Size = new Size(151, 28);
+            COMList.Size = new Size(666, 28);
             COMList.TabIndex = 12;
             // 
             // PortClose
             // 
-            PortClose.Location = new Point(269, 7);
+            PortClose.Location = new Point(113, 7);
             PortClose.Name = "PortClose";
             PortClose.Size = new Size(94, 29);
             PortClose.TabIndex = 13;
