@@ -250,22 +250,7 @@ namespace FibocomMonitor.AT
         }
 
         #region Decoder
-        // 4G XMCI
-        //      Значение(Тип)    Индекс в массиве
-        //      RAT(INT)         0
-        //      MCC(INT)         1
-        //      MNC(INT)         2
-        //      TAC(HEX)         3
-        //      CGI/ECI(HEX)     4
-        //      PCI(HEX)         5
-        //      CI/eNodeB        6 
-        //      EARFCN DL(HEX)   7
-        //      EARFCN UL(HEX)   8 Не используется
-        //      raw RSRP(INT)    9
-        //      raw RSRQ(INT)    10
-        //      raw SINR(INT)    11
-        //      TA(HEX)          12
-        private void XMCIDecoder(string[] lines, int rat, int[] bwcodes) // Список вышек
+        private void XMCIDecoder(string[] lines, int rat, int[] bwcodes) // Cell list
         {
             string bandAccum = string.Empty;
             int idx = 0;
@@ -288,20 +273,21 @@ namespace FibocomMonitor.AT
                     int earfcn = Convert.ToInt32(line[7].Trim('"'), 16);
                     int rsrp = int.Parse(line[10].Trim()) - 141;
                     int rsrq = int.Parse(line[11].Trim()) / 2 - 20;
+                    int pci = Convert.ToInt32((line[6].Trim('"')), 16);
 
                     string band = GetBandLte(earfcn);
 
-                    if(idx == 0)
+                    if (idx == 0)
                     {
                         Result.EARFCN = earfcn.ToString();
                     }
 
-                    if(idx < 4)
+                    if (idx < 3)
                     {
-                        bandAccum += band + " | ";
+                        bandAccum += band + " ";
                     }
 
-                    Result.BandList.Add($"Carrier {idx}: EARFCN: {earfcn} Band: {band} RSRP: {rsrp}dBm  RSRQ: {rsrq}dB");
+                    Result.BandList.Add($"Carrier {idx}: EARFCN: {earfcn} PCI: {pci} Band: {band} RSRP: {rsrp}dBm  RSRQ: {rsrq}dB");
                 }
                 else // 3G
                 {
@@ -327,7 +313,7 @@ namespace FibocomMonitor.AT
                     string bandPart = $"{GetBandUMTS(uarfcn.ToString())}";
                     if (idx < 3)
                     {
-                        bandAccum += bandPart + "|";
+                        bandAccum += bandPart + " ";
                     }
                     else if (idx == 3)
                     {
@@ -350,7 +336,7 @@ namespace FibocomMonitor.AT
                 int sig = int.Parse(match.Groups["sg"].Value) * 100 / 31;
                 Result.SignalStrength = sig.ToString("0") + " %";
                 int rssi = int.Parse(match.Groups["RSSI"].Value) - 111;
-                Result.RSSI = $"{rssi:0} dbm";
+                Result.RSSI = $"{rssi:0} dBm";
             }
             else
             {
@@ -358,7 +344,7 @@ namespace FibocomMonitor.AT
             }
         }
 
-        private void DecoderXS(int rat, string xmciLine) // Показатели основной вышки
+        private void DecoderXS(int rat, string xmciLine) // Main cell
         {
             ArgumentNullException.ThrowIfNull(xmciLine, nameof(xmciLine));
 
@@ -366,7 +352,6 @@ namespace FibocomMonitor.AT
 
             if (rat == 4 || rat == 7) // 4G
             {
-                //int earf = Convert.ToInt32(values[7].Trim('"'), 16);
                 int rsrpVal = int.Parse(values[9].Trim('"')) - 141;
                 int rsrqVal = int.Parse(values[10].Trim('"')) / 2 - 20;
                 int sinrVal = int.Parse(values[11].Trim('"')) / 2;
@@ -375,7 +360,6 @@ namespace FibocomMonitor.AT
                 Result.RSRP = $"{rsrpVal} dBm";
                 Result.RSRQ = $"{rsrqVal} dB";
                 Result.SINR = $"{sinrVal} dB";
-                //Result.EARFCN = earf.ToString();
 
                 if (ta > 0)
                     Result.Distance = $"{Math.Round((ta * 78.125) / 1000, 3)} km";
@@ -542,6 +526,12 @@ namespace FibocomMonitor.AT
             return "--";
         }
 
+        /// <summary>
+        ///   Проверка на открытый COM порт.
+        /// </summary>
+        /// <param name="AtPort"></param>
+        /// <param name="serialPort"></param>
+        /// <returns>true если порт открыт. false если он закрыт или прозошла ошибка.</returns>
         public static bool Check(string AtPort, out SerialPort? serialPort)
         {
             try
@@ -563,7 +553,7 @@ namespace FibocomMonitor.AT
             string cpin = SendAndRead("AT+CPIN?");
             if (!cpin.Contains("+CPIN: SIM PIN"))
             {
-                throw new Exception("No SIM or port not working!");
+                throw new Exception("No SIM or port not work!");
             }
         }
 
