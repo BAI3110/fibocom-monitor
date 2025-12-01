@@ -1,6 +1,6 @@
 # Fibocom Monitor
 **Только для модемов серии L8x0-GL**
-*Multilanguage README*
+
 [![en](https://img.shields.io/badge/lang-en-red.svg)](./README.EN.md)
 
 ## Описание:
