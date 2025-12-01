@@ -1,5 +1,6 @@
 using FibocomMonitor.AT;
 using System.IO.Ports;
+using System.Text;
 
 namespace FibocomMonitor
 {
@@ -173,16 +174,26 @@ namespace FibocomMonitor
 
         private static string ExtractComPort(string text)
         {
-            var m = System.Text.RegularExpressions.Regex.Match(text, @"\(COM\d+\)");
-            if(m.Success)
-            {
-                return m.Value;
-            }
-            else
-            {
-                return string.Empty; 
-            }
-        }
+            if (string.IsNullOrEmpty(text))
+                return string.Empty;
 
+            int start = text.IndexOf("(COM", StringComparison.OrdinalIgnoreCase) + 1;
+
+            if (start < 0)
+            {
+                return string.Empty;
+            }
+
+            var sb = new StringBuilder();
+
+            for (int i = start; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c == ')') break;
+                sb.Append(c);
+            }
+
+            return sb.ToString();
+        }
     }
 }
